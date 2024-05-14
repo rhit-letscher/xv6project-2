@@ -151,6 +151,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
+    //this is ok since we want to share memory
     if(*pte & PTE_V)
       panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
@@ -294,46 +295,8 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
-//gives "new" identical pointers to all entries in old except for the trapframe
-int uvmshare(void* trapframepointer, pagetable_t old, pagetable_t new, uint64 sz){
-  //maps all non-trapframe entries
-  pte_t *pte = 0;
-  uint64 pa, i;
-  uint flags;
-  char *mem;
 
-  for(i = 0; (char*) pte < (char*) trapframepointer; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if(mappages(new, i, PGSIZE, (uint64)pte, flags) != 0){
-      goto err;
-    }
-  }
 
-  //creates new pointers for trapframe entires
-  while(i<sz){
-    if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
-    pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      uvmunmap(new, 0, i / PGSIZE, 1);
-      goto err;
-    }
-  }
-
-  return 0;
-  err:
-    return -1;
-}
 
 // Given a parent process's page table, copy
 // its memory into a child's page table.
@@ -345,6 +308,7 @@ int uvmshare(void* trapframepointer, pagetable_t old, pagetable_t new, uint64 sz
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
+  printf("calling uvmcopy\n");
   pte_t *pte;
   uint64 pa, i;
   uint flags;

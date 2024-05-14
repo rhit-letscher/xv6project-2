@@ -89,3 +89,15 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_create_thread(void)
+{
+  uint64 thread;
+  uint64 func;
+  uint64 func_args;
+  argaddr(0, &thread);
+  argaddr(1, &func);
+  argaddr(2, &func_args);
+  return create_thread((void*) thread, (void*) func, (void*) func_args);
+}

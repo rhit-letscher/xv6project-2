@@ -44,6 +44,41 @@ proc_mapstacks(pagetable_t kpgtbl)
   }
 }
 
+//gives "new" identical pointers to all entries in old except for the trapframe
+int uvmshare(struct trapframe *trapframe, pagetable_t old, pagetable_t new, uint64 sz){
+  //maps all non-trapframe entries
+  printf("calling uvmshare\n");
+  pte_t *pte;
+  uint64 pa, i;
+  uint flags;
+  //char *mem;
+
+  //copies pointers for shared address space (total pagetable - trapframe - trampoline)
+  //trapframe and trampoline are each one page
+  for(i = 0; i< (sz-(PGSIZE*2)); i += PGSIZE){
+    printf("walk\n");
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmshare: pte should exist");
+    flags = PTE_FLAGS(*pte);
+    pa = PTE2PA(*pte);
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      panic("error");
+    }
+  }
+
+  //creates new pointers for trapframe entires
+    // map the trampoline code (for system call return)
+  // at the highest user virtual address.
+  // only the supervisor uses it, on the way
+  // to/from user space, so not PTE_U.
+  if(mappages(new, TRAMPOLINE, PGSIZE,
+              (uint64)trampoline, PTE_R | PTE_X) < 0){
+    uvmfree(new, 0);
+    return 0;
+  }
+  return 0;
+}
+
 // initialize the proc table.
 void
 procinit(void)
@@ -207,19 +242,68 @@ proc_pagetable(struct proc *p)
   return pagetable;
 }
 
-struct proc* create_thread(void* func, void* func_args){
-  struct proc* parent = myproc();
+int create_thread(void* thread, void* func, void* func_args){
+  int i, pid;
+  struct proc *np;
+  struct proc *p = myproc();
+  //printf("trapframe is %d bytes", sizeof(struct trapframe));
 
-  struct proc* t = alloc_proc();
-  t->parent = parent;
-  t->state = RUNNABLE;
-  t->isMain = 0;
-  
+  // Allocate process.
+  if((np = allocproc()) == 0){
+    return -1;
+  }
+
+  // Copy user memory from parent to child.
+  // frames should be the same except for the trapframe and trampoline
+  if(uvmshare(p->trapframe, p->pagetable, np->pagetable, p->sz) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+  np->sz = p->sz;
+
+  // copy saved user registers.
+  *(np->trapframe) = *(p->trapframe);
+
+  // Cause fork to return 0 in the child.
+  np->trapframe->a0 = 0;
+
+  // increment reference counts on open file descriptors.
+  for(i = 0; i < NOFILE; i++)
+    if(p->ofile[i])
+      np->ofile[i] = filedup(p->ofile[i]);
+  np->cwd = idup(p->cwd);
+
+  safestrcpy(np->name, p->name, sizeof(p->name));
+
+  pid = np->pid;
+
+  release(&np->lock);
+
+  acquire(&wait_lock);
+  np->parent = p;
+  release(&wait_lock);
+
+  acquire(&np->lock);
+  np->state = RUNNABLE;
+  np->isMain = 0;
+  np->context.ra = (uint64)func;
+  release(&np->lock);
+
   //overwrite context: instead of executing at forkret, we want to execute at whatever function in parameter
-  t->context.ra = (uint64)func;
-  //todo push args onto stack
-  
+  //np->context.ra = (uint64)func;
+  //push args onto stack
+  //uint64 sp = t->sz;
+
+  //todo actually return thread
+  thread = 0;
+  return pid;
 }
+
+//halts execution of parent process until the specified thread exits
+// int thread_join(struct proc* thread, void* func, void* func_args){
+//   while(thread->state != )
+// }
 
 // Free a process's page table, and free the
 // physical memory it refers to.
@@ -292,6 +376,8 @@ growproc(int n)
 
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
+// Create a new process, copying the parent.
+// Sets up child kernel stack to return as if from fork() system call.
 int
 fork(void)
 {
@@ -305,8 +391,7 @@ fork(void)
   }
 
   // Copy user memory from parent to child.
-  // frames should be the same except for the trapframe
-  if(uvmshare(p->trapframe, p->pagetable, np->pagetable, p->sz) < 0){
+  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
     return -1;
@@ -341,6 +426,7 @@ fork(void)
 
   return pid;
 }
+
 
 // Pass p's abandoned children to init.
 // Caller must hold wait_lock.
