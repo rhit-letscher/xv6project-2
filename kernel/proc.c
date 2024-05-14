@@ -313,12 +313,48 @@ int create_thread(void* thread, void* func, void* func_args){
   np->state = RUNNABLE;
   np->isMain = 0;
   //np->context.ra = (uint64)func;
-  release(&np->lock);
+    //todo p and np need to share a lock? 
 
-  //overwrite context: instead of executing at forkret, we want to execute at whatever function in parameter
-  //np->context.ra = (uint64)func;
-  //push args onto stack
+  //allocate the user stack for new proc
+  //get the next available page in memory (shared between p and np)
+  uint64 sz = np->sz;
+  sz = PGROUNDUP(sz);
+  uint64 sz1;
+  //allocate new user stack pages (np and p have same pointers)
+  if((sz1 = uvmalloc(np->pagetable, sz, sz + 2*PGSIZE, PTE_W)) == 0){
+    printf("malloc error\n");
+    return -1;
+  }
+  sz = sz1;
+  //marks user stack pages as inaccessible
+  uvmclear(np->pagetable, sz-2*PGSIZE);
+  int sp = sz;
+  int stackbase = sp - PGSIZE;
+
+  //push args onto user stack (- size of pointer), we assume theres one arg
+  //we need this argument to go somewhere without it completely 
+  //overwriting its parent's memory
+  uint64 ustack[MAXARG];
+  ustack[0] = (uint64) func_args;
+  ustack[1] = 0;
+  if(sp < stackbase){
+    printf("error: not enough space for userstack");
+    return -1;
+  }
+  sp -= sizeof(uint64);
+  sp -= sp % 16; // riscv sp must be 16-byte aligned
+  if(copyout(np->pagetable, sp, (char *)ustack, sizeof(uint64)*2) < 0){
+    printf("error pushing args to sp\n");
+    return -1;
+  }
+  
+  np->trapframe->a1 = sp;
+  np->trapframe->sp = sp;
   //uint64 sp = t->sz;
+
+  //set trapframe to start of function to execute
+  np->trapframe->epc = (uint64) func;  // initial program counter = main
+  release(&np->lock);
 
   //todo actually return thread
   printf("done with create thread\n");
