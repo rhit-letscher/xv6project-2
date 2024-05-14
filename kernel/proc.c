@@ -56,7 +56,7 @@ int uvmshare(struct trapframe *trapframe, pagetable_t old, pagetable_t new, uint
   //copies pointers for shared address space (total pagetable - trapframe - trampoline)
   //trapframe and trampoline are each one page
   for(i = 0; i< (sz-(PGSIZE*2)); i += PGSIZE){
-    printf("walk\n");
+    //printf("walk\n");
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmshare: pte should exist");
     flags = PTE_FLAGS(*pte);
@@ -66,16 +66,40 @@ int uvmshare(struct trapframe *trapframe, pagetable_t old, pagetable_t new, uint
     }
   }
 
-  //creates new pointers for trapframe entires
+  printf("done mapping standard pages\n");
+  char *mem;
+  //creates new pointers for trapframe and trampoline entires
+    for(i = (sz-(PGSIZE*2)); i < sz; i += PGSIZE){
+    //printf("herel\n");
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmcopy: pte should exist");
+    if((*pte & PTE_V) == 0)
+      panic("uvmcopy: page not present");
+    pa = PTE2PA(*pte);
+    flags = PTE_FLAGS(*pte);
+    if((mem = kalloc()) == 0){
+      printf("tramp/trap error");
+      return -1;
+    }
+    memmove(mem, (char*)pa, PGSIZE);
+    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+      kfree(mem);
+      printf("tramp/trap error");
+      return -1;
+    }
+
+  }
+
+
     // map the trampoline code (for system call return)
   // at the highest user virtual address.
   // only the supervisor uses it, on the way
   // to/from user space, so not PTE_U.
-  if(mappages(new, TRAMPOLINE, PGSIZE,
-              (uint64)trampoline, PTE_R | PTE_X) < 0){
-    uvmfree(new, 0);
-    return 0;
-  }
+  // if(mappages(new, TRAMPOLINE, PGSIZE,
+  //             (uint64)trampoline, PTE_R | PTE_X) < 0){
+  //   uvmfree(new, 0);
+  //   return 0;
+  // }
   return 0;
 }
 
@@ -260,11 +284,12 @@ int create_thread(void* thread, void* func, void* func_args){
     release(&np->lock);
     return -1;
   }
+  printf("done with create thread\n");
   np->sz = p->sz;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
-
+  printf("copied trapframe\n");
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
@@ -287,7 +312,7 @@ int create_thread(void* thread, void* func, void* func_args){
   acquire(&np->lock);
   np->state = RUNNABLE;
   np->isMain = 0;
-  np->context.ra = (uint64)func;
+  //np->context.ra = (uint64)func;
   release(&np->lock);
 
   //overwrite context: instead of executing at forkret, we want to execute at whatever function in parameter
@@ -296,6 +321,7 @@ int create_thread(void* thread, void* func, void* func_args){
   //uint64 sp = t->sz;
 
   //todo actually return thread
+  printf("done with create thread\n");
   thread = 0;
   return pid;
 }
