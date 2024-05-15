@@ -366,7 +366,7 @@ int create_thread(void* thread, void* func, void* func_args){
     printf("error: not enough space for userstack");
     return -1;
   }
-  sp -= sizeof(uint64);
+  sp -= sizeof(uint64)*2;
   sp -= sp % 16; // riscv sp must be 16-byte aligned
   if(copyout(np->pagetable, sp, (char *)ustack, sizeof(uint64)*2) < 0){
     printf("error pushing args to sp\n");
