@@ -314,12 +314,12 @@ int create_thread(void* thread, void* func, void* func_args){
     release(&np->lock);
     return -1;
   }
-  printf("done with create thread\n");
+  //printf("done with create thread\n");
   np->sz = p->sz;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
-  printf("copied trapframe\n");
+  //printf("copied trapframe\n");
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
@@ -384,7 +384,7 @@ int create_thread(void* thread, void* func, void* func_args){
   release(&np->lock);
 
   //todo actually return thread
-  printf("done with create thread\n");
+  //printf("done with create thread\n");
   thread = (void*) np;
   return pid;
 }
@@ -517,8 +517,16 @@ reparent(struct proc *p)
 
   for(pp = proc; pp < &proc[NPROC]; pp++){
     if(pp->parent == p){
+      //If the main process dies, then all threads associated with it will die,
+      // i.e., we do not do any reparenting.
+      if(pp->isMain == 0){
+        kill(pp->pid);
+        return;
+      }
+      else{
       pp->parent = initproc;
       wakeup(initproc);
+      }
     }
   }
 }
@@ -580,7 +588,7 @@ wait(uint64 addr)
 
   acquire(&wait_lock);
 
-  printf("calling wait\n");
+  //printf("calling wait\n");
   for(;;){
     // Scan through table looking for exited children.
     havekids = 0;
@@ -592,10 +600,10 @@ wait(uint64 addr)
         havekids = 1;
         if(pp->state == ZOMBIE){
           // Found one.
-          printf("found child proc %d\n",pp->pid);
+          //printf("found child proc %d\n",pp->pid);
           pid = pp->pid;
           //stores exit status in addr
-          printf("my state is %d\n",pp->xstate);
+          //printf("my state is %d\n",pp->xstate);
           if(addr != 0 && copyout(p->pagetable, addr, (char *)&pp->xstate,
                                   sizeof(pp->xstate)) < 0) {
             release(&pp->lock);
@@ -606,7 +614,7 @@ wait(uint64 addr)
           freeproc(pp);
           release(&pp->lock);
           release(&wait_lock);
-          printf("done with wait\n");
+          //printf("done with wait\n");
           return pid;
         }
         release(&pp->lock);
