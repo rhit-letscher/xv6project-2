@@ -2,7 +2,8 @@
 #include "user/user.h"
 
 void thread_test(int n){
-  printf("This is a test of threads, my number is %d\n",n);
+  printf("This is the child thread, my argument is %d\n",n);
+  exit(0);
 }
 
 int
@@ -15,7 +16,10 @@ main(int argc, char *argv[])
   
   struct proc *mythread = 0;
 
+  printf("About to create child thread with argument %d\n", arg);
   tid = create_thread((void*) mythread,thread_test,&arg);
-  printf("Created thread %d\n", tid);
+  wait(0);
+  printf("child thread with tid %d is done executing, returning\n", tid);
+  while(1);
   return 0;
 }

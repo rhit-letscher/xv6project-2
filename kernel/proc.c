@@ -27,6 +27,29 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
+
+// Free a process's page table, and free the
+// physical memory it refers to.
+void
+proc_freepagetable(pagetable_t pagetable, uint64 sz)
+{
+  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+  uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmfree(pagetable, sz);
+}
+
+void
+thread_freepagetable(pagetable_t pagetable, uint64 sz)
+{
+  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+  uvmunmap(pagetable, TRAPFRAME, 1, 0);
+
+  //todo do we need to free trampoline and tf pages
+  //uvmfree(pagetable+sz-(PGSIZE*2), (PGSIZE*2)); but need to make a uvmfree() that can
+  //use pointers
+  //uvmfree(pagetable, sz);
+}
+
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -213,14 +236,21 @@ found:
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
+// if it's a thread we only free the parts of pagetable that are thread specific
 static void
 freeproc(struct proc *p)
 {
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if(p->isMain == 1){
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  }
+  else{
+    if(p->pagetable)
+    thread_freepagetable(p->pagetable, p->sz);
+  }
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -310,11 +340,6 @@ int create_thread(void* thread, void* func, void* func_args){
   release(&wait_lock);
 
   acquire(&np->lock);
-  np->state = RUNNABLE;
-  np->isMain = 0;
-  //np->context.ra = (uint64)func;
-    //todo p and np need to share a lock? 
-
   //allocate the user stack for new proc
   //get the next available page in memory (shared between p and np)
   uint64 sz = np->sz;
@@ -350,15 +375,17 @@ int create_thread(void* thread, void* func, void* func_args){
   
   np->trapframe->a1 = sp;
   np->trapframe->sp = sp;
-  //uint64 sp = t->sz;
+  //uint64 sp = t->sz;`
 
   //set trapframe to start of function to execute
   np->trapframe->epc = (uint64) func;  // initial program counter = main
+  np->state = RUNNABLE;
+  np->isMain = 0;
   release(&np->lock);
 
   //todo actually return thread
   printf("done with create thread\n");
-  thread = 0;
+  thread = (void*) np;
   return pid;
 }
 
@@ -367,15 +394,6 @@ int create_thread(void* thread, void* func, void* func_args){
 //   while(thread->state != )
 // }
 
-// Free a process's page table, and free the
-// physical memory it refers to.
-void
-proc_freepagetable(pagetable_t pagetable, uint64 sz)
-{
-  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-  uvmunmap(pagetable, TRAPFRAME, 1, 0);
-  uvmfree(pagetable, sz);
-}
 
 // a user program that calls exec("/init")
 // assembled from ../user/initcode.S
@@ -552,6 +570,7 @@ exit(int status)
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
+//addr = where exit status stored
 int
 wait(uint64 addr)
 {
@@ -561,6 +580,7 @@ wait(uint64 addr)
 
   acquire(&wait_lock);
 
+  printf("calling wait\n");
   for(;;){
     // Scan through table looking for exited children.
     havekids = 0;
@@ -572,16 +592,21 @@ wait(uint64 addr)
         havekids = 1;
         if(pp->state == ZOMBIE){
           // Found one.
+          printf("found child proc %d\n",pp->pid);
           pid = pp->pid;
+          //stores exit status in addr
+          printf("my state is %d\n",pp->xstate);
           if(addr != 0 && copyout(p->pagetable, addr, (char *)&pp->xstate,
                                   sizeof(pp->xstate)) < 0) {
             release(&pp->lock);
             release(&wait_lock);
             return -1;
           }
+          //freeproc: we need to make sure the parent's pagetable isnt freed
           freeproc(pp);
           release(&pp->lock);
           release(&wait_lock);
+          printf("done with wait\n");
           return pid;
         }
         release(&pp->lock);
@@ -638,6 +663,47 @@ scheduler(void)
   }
 }
 
+int join_thread(uint64 tojoin)
+{
+  struct proc *pp;
+  int pid;
+  struct proc *p = myproc();
+  struct proc *addr;
+
+  acquire(&wait_lock);
+
+  for(;;){
+    // Scan through table looking for thread with pid pid.
+    //havekids = 0;
+    for(pp = proc; pp < &proc[NPROC]; pp++){
+      if(pp->pid == tojoin){
+        // make sure the child isn't still in exit() or swtch().
+        acquire(&pp->lock);
+        addr = pp;
+
+        //havekids = 1;
+        if(pp->state == ZOMBIE){
+          // Found one.
+          pid = pp->pid;
+          if(tojoin != 0 && copyout(p->pagetable, (uint64) addr, (char *)&pp->xstate,
+                                  sizeof(pp->xstate)) < 0) {
+            release(&pp->lock);
+            release(&wait_lock);
+            return -1;
+          }
+          freeproc(pp);
+          release(&pp->lock);
+          release(&wait_lock);
+          return pid;
+        }
+        release(&pp->lock);
+      }
+    }
+    
+    // Wait for a child to exit.
+    sleep(p, &wait_lock);  //DOC: wait-sleep
+  }
+}
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
 // intena because intena is a property of this
