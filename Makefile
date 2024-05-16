@@ -133,7 +133,10 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
-	$U/_create_thread_test\
+	$U/_create_thread\
+	$U/_reparent_1\
+	$U/_reparent_2\
+	$U/_memleaks\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

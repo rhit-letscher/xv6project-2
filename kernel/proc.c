@@ -19,6 +19,7 @@ struct spinlock pid_lock;
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
+
 extern char trampoline[]; // trampoline.S
 
 // helps ensure that wakeups of wait()ing
@@ -65,6 +66,27 @@ proc_mapstacks(pagetable_t kpgtbl)
     uint64 va = KSTACK((int) (p - proc));
     kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
   }
+}
+
+int uvmcopyshare(pagetable_t parent, pagetable_t child, uint64 sz, uint64 newsz){
+  pte_t *pte;
+  uint64 pa, i;
+  uint flags;
+
+  for(i = sz; i < newsz; i += PGSIZE){
+    printf("calling walk i = %d..\n",i);
+    if((pte = walk(parent, i, 0)) == 0)
+      panic("uvmshare: pte should exist");
+    printf("walk success\n");
+    flags = PTE_FLAGS(*pte);
+    pa = PTE2PA(*pte);
+    printf("mappages on va=%d\n",i);
+    if(mappages(child, i, PGSIZE, pa, flags) != 0){
+      panic("error");
+      return -1;
+    }
+  }
+  return 0;
 }
 
 //gives "new" identical pointers to all entries in old except for the trapframe
@@ -248,6 +270,7 @@ freeproc(struct proc *p)
     proc_freepagetable(p->pagetable, p->sz);
   }
   else{
+    printf("freeing dead thread..\n");
     if(p->pagetable)
     thread_freepagetable(p->pagetable, p->sz);
   }
@@ -294,6 +317,28 @@ proc_pagetable(struct proc *p)
   }
 
   return pagetable;
+}
+
+//prints all currently running processes
+int ps(void){
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+  acquire(&p->lock);
+  if(p->state == UNUSED) {
+      release(&p->lock);
+      continue;
+  } else {
+      int ppid = 0;
+      if(p->parent != 0){
+        struct proc *pp = p->parent;
+        ppid = pp->pid;
+      }
+      printf("PID: %d       PARENT PID: %d\n",p->pid,ppid);
+    }
+  release(&p->lock);
+  }
+  return 0;
 }
 
 int create_thread(void* thread, void* func, void* func_args){
@@ -361,7 +406,7 @@ int create_thread(void* thread, void* func, void* func_args){
   //overwriting its parent's memory
   uint64 ustack[MAXARG];
   ustack[0] = (uint64) func_args;
-  ustack[1] = 0;
+  ustack[1] = (uint64) 0; //ra
   if(sp < stackbase){
     printf("error: not enough space for userstack");
     return -1;
@@ -383,8 +428,7 @@ int create_thread(void* thread, void* func, void* func_args){
   np->isMain = 0;
   release(&np->lock);
 
-  //todo actually return thread
-  //printf("done with create thread\n");
+  //points thread param to newly created thread and returns pid
   thread = (void*) np;
   return pid;
 }
@@ -434,14 +478,33 @@ userinit(void)
   release(&p->lock);
 }
 
+
+int growchildproc(int n, struct proc *p){
+  uint64 sz;
+  sz = p->sz;
+  printf("calling growchildproc\n");
+  if(n > 0){
+    if((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
+      return -1;
+    }
+  } else if(n < 0){
+    sz = uvmdealloc(p->pagetable, sz, sz + n);
+  }
+  p->sz = sz;
+
+  return 0;
+}
+
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
 int
 growproc(int n)
 {
+  //caller proc grows its pagetable
+  printf("growing parent\n");
   uint64 sz;
   struct proc *p = myproc();
-
+  printf("sz is %d\n");
   sz = p->sz;
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
@@ -451,6 +514,47 @@ growproc(int n)
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+
+  //also grow childrens' memory
+  //if im a thread... copy to my parent then my siblings
+  printf("sz is %d\n",sz);
+  uint64 initsz = sz-n;
+  if(p->isMain == 0){
+
+  struct proc *pp = p->parent; 
+  if(pp==0){
+    panic("orphan thread\n");
+  }
+
+  //copy from thread to its parent
+  uvmcopyshare(p->pagetable, pp->pagetable, initsz,sz);
+  
+  //find and copy to siblings
+  for(struct proc *s = proc; s < &proc[NPROC]; s++) {
+      if(s!=p && (s->parent == pp)){
+        printf("growing thread: from %d to %d\n",p->pid,s->pid);
+        //growchildproc(n,s);
+        //printf("done with growchildproc\n");
+        uvmcopyshare(p->pagetable, s->pagetable, initsz,sz);
+      }
+  }
+
+  return 0;
+  }
+  //if im a process, copy to my kiddie threads
+  else{
+    printf("sz is %d\n",sz);
+    for(struct proc *c = proc; c < &proc[NPROC]; c++) {
+      if(c!=p && (c->parent == p)){
+        printf("growing thread: from %d to %d\n",p->pid,c->pid);
+        //start by growing their memory then copy pointers
+        //growchildproc(n,c);
+        //printf("done with growchildproc\n");
+        //sz = sz+n
+        uvmcopyshare(p->pagetable, c->pagetable, initsz,sz);
+      }
+  } 
+  }
   return 0;
 }
 
@@ -520,7 +624,7 @@ reparent(struct proc *p)
       //If the main process dies, then all threads associated with it will die,
       // i.e., we do not do any reparenting.
       if(pp->isMain == 0){
-        kill(pp->pid);
+        pp->killed = 1;
         return;
       }
       else{
@@ -632,6 +736,61 @@ wait(uint64 addr)
   }
 }
 
+
+//wait for a thread with pid pid to finish executing. stores exit status in addr
+int join_thread(int pid,uint64 addr)
+{
+  struct proc *pp;
+  int havekids;
+  struct proc *p = myproc();
+
+  acquire(&wait_lock);
+
+  //printf("calling wait\n");
+  for(;;){
+    // Scan through table looking for exited children.
+    havekids = 0;
+    for(pp = proc; pp < &proc[NPROC]; pp++){
+      if(pp->parent == p && (pid == 0 || pp->pid == pid)){
+        // make sure the child isn't still in exit() or swtch().
+        acquire(&pp->lock);
+        printf("calling join %d..\n",pp->pid);
+        havekids = 1;
+        if(pp->state == ZOMBIE){
+          // Found one.
+          //printf("found child proc %d\n",pp->pid);
+          pid = pp->pid;
+          //stores exit status in addr
+          //printf("my state is %d\n",pp->xstate);
+          if(addr != 0 && copyout(p->pagetable, addr, (char *)&pp->xstate,
+                                  sizeof(pp->xstate)) < 0) {
+            release(&pp->lock);
+            release(&wait_lock);
+            return -1;
+          }
+          //freeproc: we need to make sure the parent's pagetable isnt freed
+          freeproc(pp);
+          release(&pp->lock);
+          release(&wait_lock);
+          //printf("done with wait\n");
+          return pid;
+        }
+        release(&pp->lock);
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if(!havekids || killed(p)){
+      release(&wait_lock);
+      return -1;
+    }
+    
+    // Wait for a child to exit.
+    sleep(p, &wait_lock);  //DOC: wait-sleep
+  }
+}
+
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -671,47 +830,6 @@ scheduler(void)
   }
 }
 
-int join_thread(uint64 tojoin)
-{
-  struct proc *pp;
-  int pid;
-  struct proc *p = myproc();
-  struct proc *addr;
-
-  acquire(&wait_lock);
-
-  for(;;){
-    // Scan through table looking for thread with pid pid.
-    //havekids = 0;
-    for(pp = proc; pp < &proc[NPROC]; pp++){
-      if(pp->pid == tojoin){
-        // make sure the child isn't still in exit() or swtch().
-        acquire(&pp->lock);
-        addr = pp;
-
-        //havekids = 1;
-        if(pp->state == ZOMBIE){
-          // Found one.
-          pid = pp->pid;
-          if(tojoin != 0 && copyout(p->pagetable, (uint64) addr, (char *)&pp->xstate,
-                                  sizeof(pp->xstate)) < 0) {
-            release(&pp->lock);
-            release(&wait_lock);
-            return -1;
-          }
-          freeproc(pp);
-          release(&pp->lock);
-          release(&wait_lock);
-          return pid;
-        }
-        release(&pp->lock);
-      }
-    }
-    
-    // Wait for a child to exit.
-    sleep(p, &wait_lock);  //DOC: wait-sleep
-  }
-}
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
 // intena because intena is a property of this

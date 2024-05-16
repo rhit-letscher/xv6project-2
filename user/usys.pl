@@ -37,3 +37,5 @@ entry("sbrk");
 entry("sleep");
 entry("uptime");
 entry("create_thread");
+entry("join_thread");
+entry("ps");

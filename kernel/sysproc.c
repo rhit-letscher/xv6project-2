@@ -101,3 +101,15 @@ sys_create_thread(void)
   argaddr(2, &func_args);
   return create_thread((void*) thread, (void*) func, (void*) func_args);
 }
+
+uint64 sys_join_thread(void){
+  int pid;
+  uint64 addr;
+  argint(0,&pid);
+  argaddr(1, &addr);
+  return join_thread(pid, addr);
+}
+
+uint64 sys_ps(void){
+  return ps();
+}
