@@ -225,6 +225,7 @@ allocproc(void)
       release(&p->lock);
     }
   }
+  printf("allocproc error: out of available processes\n");
   return 0;
 
 found:
@@ -244,6 +245,7 @@ found:
     freeproc(p);
     release(&p->lock);
     return 0;
+    printf("allocproc error: cannot create pagetable\n");
   }
 
   // Set up new context to start executing at forkret,
@@ -349,6 +351,7 @@ int create_thread(void* thread, void* func, void* func_args){
 
   // Allocate process.
   if((np = allocproc()) == 0){
+    printf("error allocating process\n");
     return -1;
   }
 
@@ -404,11 +407,11 @@ int create_thread(void* thread, void* func, void* func_args){
   //push args onto user stack (- size of pointer), we assume theres one arg
   //we need this argument to go somewhere without it completely 
   //overwriting its parent's memory
-  uint64 ustack[MAXARG];
+  uint64 ustack[2];
   ustack[0] = (uint64) func_args;
   ustack[1] = (uint64) 0; //ra
   if(sp < stackbase){
-    printf("error: not enough space for userstack");
+    printf("error: not enough space for userstack\n");
     return -1;
   }
   sp -= sizeof(uint64)*2;
@@ -418,7 +421,9 @@ int create_thread(void* thread, void* func, void* func_args){
     return -1;
   }
   
-  np->trapframe->a1 = sp;
+  np->trapframe->a0 = ustack[0];
+  //np->trapframe->a1 = sp;
+  //np->trapframe->ra = ustack[0];
   np->trapframe->sp = sp;
   //uint64 sp = t->sz;`
 
@@ -430,6 +435,7 @@ int create_thread(void* thread, void* func, void* func_args){
 
   //points thread param to newly created thread and returns pid
   thread = (void*) np;
+  printf("done with create thread, returning %d\n",pid);
   return pid;
 }
 
@@ -501,7 +507,7 @@ int
 growproc(int n)
 {
   //caller proc grows its pagetable
-  printf("growing parent\n");
+  printf("growproc\n");
   uint64 sz;
   struct proc *p = myproc();
   printf("sz is %d\n");
@@ -521,6 +527,7 @@ growproc(int n)
   uint64 initsz = sz-n;
   if(p->isMain == 0){
 
+  printf("growproc child\n");
   struct proc *pp = p->parent; 
   if(pp==0){
     panic("orphan thread\n");
@@ -555,6 +562,7 @@ growproc(int n)
       }
   } 
   }
+  printf("done with growproc\n");
   return 0;
 }
 

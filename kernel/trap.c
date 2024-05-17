@@ -72,6 +72,12 @@ usertrap(void)
       setkilled(p);
     }
   }
+  //page fault
+  else if(r_scause() == 15){
+    printf("usertrap(): pagefault pid=%d\n", p->pid);
+    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    setkilled(p);
+  }
    else if((which_dev = devintr()) != 0){
     // ok
   } else {

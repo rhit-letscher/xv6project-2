@@ -133,7 +133,10 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
-	$U/_create_thread\
+	$U/_thread_funcs\
+	$U/_thread_join\
+	$U/_thread_args\
+	$U/_mem_share\
 	$U/_reparent_1\
 	$U/_reparent_2\
 	$U/_memleaks\

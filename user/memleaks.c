@@ -1,28 +1,38 @@
 #include "kernel/types.h"
 #include "user/user.h"
+#include "kernel/param.h"
 
+//NOTE: set NPROC to 1000 before executing
 //Spawns a bunch of threads to test for memory leaks
 void thread_func(int x){
   printf("I'm child %d",getpid());
- // exit(0);
+  exit(0);
 }
 
 int
 main(int argc, char *argv[])
 {
-  int tid[1000];
-  int args[1000];
-  struct proc* threads[1000];
+  int tid[NPROC];
+  int args[NPROC];
+  struct proc* threads[NPROC];
 
   printf("I am main thread pid %d\n",getpid());
     
-  for(int i = 0;i<1000;i++){
+  for(int i = 0;i<NPROC;i++){
     args[i] = i;
+    //printf("tid[i] is empty rn, value is %d\n", tid[i]);
     tid[i] = create_thread((void*) threads[i],thread_func,&args[i]);
-    printf("Spawning child with PID %d", tid[i]);
+    if(tid[i]!=-1){
+    printf("Spawning child with PID %d\n", tid[i]);
+    }
   }
 
+  for(int i = 0;i<NPROC;i++){
+    if(tid[i]!=-1){
+    join_thread(tid[i],0);
+    printf("Joining child with PID %d\n", tid[i]);
+    }
+  }
   printf("Done\n");
-  //exit(0);
-  return 0;
+  exit(0);
 }
