@@ -12,27 +12,20 @@ void thread_func(int x){
 int
 main(int argc, char *argv[])
 {
-  int tid[NPROC];
-  int args[NPROC];
-  struct proc* threads[NPROC];
+  int tid[1000];
+  struct proc* threads[1000];
 
   printf("I am main thread pid %d\n",getpid());
     
-  for(int i = 0;i<NPROC;i++){
-    args[i] = i;
-    //printf("tid[i] is empty rn, value is %d\n", tid[i]);
-    tid[i] = create_thread((void*) threads[i],thread_func,&args[i]);
-    if(tid[i]!=-1){
+  for(int i = 0;i<1000;i++){
+    printf("Spawning child with PID %d\n", tid[i]);
+    tid[i] = create_thread((void*) threads[i],thread_func,0);
+    sleep(1);
+    join_thread(tid[i],0);
     printf("Spawning child with PID %d\n", tid[i]);
     }
-  }
 
-  for(int i = 0;i<NPROC;i++){
-    if(tid[i]!=-1){
-    join_thread(tid[i],0);
-    printf("Joining child with PID %d\n", tid[i]);
-    }
-  }
+
   printf("Done\n");
   exit(0);
 }

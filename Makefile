@@ -140,6 +140,7 @@ UPROGS=\
 	$U/_reparent_1\
 	$U/_reparent_2\
 	$U/_memleaks\
+	$U/_sbrk_thread\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

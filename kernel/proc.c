@@ -18,7 +18,7 @@ struct spinlock pid_lock;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
-
+extern void tuvmfree(pagetable_t pagetable, uint64 sz);
 
 extern char trampoline[]; // trampoline.S
 
@@ -44,11 +44,7 @@ thread_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
-
-  //todo do we need to free trampoline and tf pages
-  //uvmfree(pagetable+sz-(PGSIZE*2), (PGSIZE*2)); but need to make a uvmfree() that can
-  //use pointers
-  //uvmfree(pagetable, sz);
+  //tuvmfree(pagetable, sz);
 }
 
 // Allocate a page for each process's kernel stack.
@@ -264,6 +260,7 @@ found:
 static void
 freeproc(struct proc *p)
 {
+  printf("freeproc\n");
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
@@ -324,7 +321,7 @@ proc_pagetable(struct proc *p)
 //prints all currently running processes
 int ps(void){
   struct proc *p;
-
+  printf("The current process has PID %d\n",myproc()->pid);
   for(p = proc; p < &proc[NPROC]; p++) {
   acquire(&p->lock);
   if(p->state == UNUSED) {
@@ -625,21 +622,30 @@ fork(void)
 void
 reparent(struct proc *p)
 {
+  printf("calling reparent on %d",p->pid);
   struct proc *pp;
 
   for(pp = proc; pp < &proc[NPROC]; pp++){
+    //printf("pp is %d\n",pp->pid);
+    //printf("checking %d with parent %d\n",p->pid,p->parent->pid);
+    //printf("state is %d\n",p->state);
+    if(pp!=p){
+    //acquire(&pp->lock);
     if(pp->parent == p){
+      printf("found child %d with parent %d\n",pp->pid,pp->parent->pid);
       //If the main process dies, then all threads associated with it will die,
       // i.e., we do not do any reparenting.
       if(pp->isMain == 0){
-        pp->killed = 1;
-        return;
+        printf("found thread\n");
+        freeproc(pp);
       }
       else{
       pp->parent = initproc;
       wakeup(initproc);
       }
     }
+    //release(&pp->lock);
+  }
   }
 }
 
@@ -650,6 +656,7 @@ void
 exit(int status)
 {
   struct proc *p = myproc();
+  printf("i am proc %d\n",p->pid);
 
   if(p == initproc)
     panic("init exiting");
@@ -671,6 +678,7 @@ exit(int status)
   acquire(&wait_lock);
 
   // Give any children to init.
+  printf("calling reparent on %d\n",p->pid);
   reparent(p);
 
   // Parent might be sleeping in wait().
