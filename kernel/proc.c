@@ -88,7 +88,7 @@ int uvmcopyshare(pagetable_t parent, pagetable_t child, uint64 sz, uint64 newsz)
 //gives "new" identical pointers to all entries in old except for the trapframe
 int uvmshare(struct trapframe *trapframe, pagetable_t old, pagetable_t new, uint64 sz){
   //maps all non-trapframe entries
-  printf("calling uvmshare\n");
+  //printf("calling uvmshare\n");
   pte_t *pte;
   uint64 pa, i;
   uint flags;
@@ -107,7 +107,7 @@ int uvmshare(struct trapframe *trapframe, pagetable_t old, pagetable_t new, uint
     }
   }
 
-  printf("done mapping standard pages\n");
+  //printf("done mapping standard pages\n");
   char *mem;
   //creates new pointers for trapframe and trampoline entires
     for(i = (sz-(PGSIZE*2)); i < sz; i += PGSIZE){
@@ -260,7 +260,7 @@ found:
 static void
 freeproc(struct proc *p)
 {
-  printf("freeproc\n");
+  //printf("freeproc\n");
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
@@ -269,7 +269,7 @@ freeproc(struct proc *p)
     proc_freepagetable(p->pagetable, p->sz);
   }
   else{
-    printf("freeing dead thread..\n");
+    //printf("freeing dead thread..\n");
     if(p->pagetable)
     thread_freepagetable(p->pagetable, p->sz);
   }
@@ -485,7 +485,7 @@ userinit(void)
 int growchildproc(int n, struct proc *p){
   uint64 sz;
   sz = p->sz;
-  printf("calling growchildproc\n");
+  //printf("calling growchildproc\n");
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
       return -1;
@@ -504,10 +504,10 @@ int
 growproc(int n)
 {
   //caller proc grows its pagetable
-  printf("growproc\n");
+  //printf("growproc\n");
   uint64 sz;
   struct proc *p = myproc();
-  printf("sz is %d\n");
+  //printf("sz is %d\n");
   sz = p->sz;
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
@@ -520,11 +520,11 @@ growproc(int n)
 
   //also grow childrens' memory
   //if im a thread... copy to my parent then my siblings
-  printf("sz is %d\n",sz);
+  //printf("sz is %d\n",sz);
   uint64 initsz = sz-n;
   if(p->isMain == 0){
 
-  printf("growproc child\n");
+  //printf("growproc child\n");
   struct proc *pp = p->parent; 
   if(pp==0){
     panic("orphan thread\n");
@@ -536,7 +536,7 @@ growproc(int n)
   //find and copy to siblings
   for(struct proc *s = proc; s < &proc[NPROC]; s++) {
       if(s!=p && (s->parent == pp)){
-        printf("growing thread: from %d to %d\n",p->pid,s->pid);
+        //printf("growing thread: from %d to %d\n",p->pid,s->pid);
         //growchildproc(n,s);
         //printf("done with growchildproc\n");
         uvmcopyshare(p->pagetable, s->pagetable, initsz,sz);
@@ -547,10 +547,10 @@ growproc(int n)
   }
   //if im a process, copy to my kiddie threads
   else{
-    printf("sz is %d\n",sz);
+    //printf("sz is %d\n",sz);
     for(struct proc *c = proc; c < &proc[NPROC]; c++) {
       if(c!=p && (c->parent == p)){
-        printf("growing thread: from %d to %d\n",p->pid,c->pid);
+        //printf("growing thread: from %d to %d\n",p->pid,c->pid);
         //start by growing their memory then copy pointers
         //growchildproc(n,c);
         //printf("done with growchildproc\n");
@@ -559,7 +559,7 @@ growproc(int n)
       }
   } 
   }
-  printf("done with growproc\n");
+  //printf("done with growproc\n");
   return 0;
 }
 
@@ -622,7 +622,7 @@ fork(void)
 void
 reparent(struct proc *p)
 {
-  printf("calling reparent on %d",p->pid);
+  //printf("calling reparent on %d",p->pid);
   struct proc *pp;
 
   for(pp = proc; pp < &proc[NPROC]; pp++){
@@ -632,11 +632,11 @@ reparent(struct proc *p)
     if(pp!=p){
     //acquire(&pp->lock);
     if(pp->parent == p){
-      printf("found child %d with parent %d\n",pp->pid,pp->parent->pid);
+      //printf("found child %d with parent %d\n",pp->pid,pp->parent->pid);
       //If the main process dies, then all threads associated with it will die,
       // i.e., we do not do any reparenting.
       if(pp->isMain == 0){
-        printf("found thread\n");
+        //printf("found thread\n");
         freeproc(pp);
       }
       else{
@@ -656,7 +656,7 @@ void
 exit(int status)
 {
   struct proc *p = myproc();
-  printf("i am proc %d\n",p->pid);
+  //printf("i am proc %d\n",p->pid);
 
   if(p == initproc)
     panic("init exiting");
@@ -678,7 +678,7 @@ exit(int status)
   acquire(&wait_lock);
 
   // Give any children to init.
-  printf("calling reparent on %d\n",p->pid);
+  //printf("calling reparent on %d\n",p->pid);
   reparent(p);
 
   // Parent might be sleeping in wait().
@@ -770,7 +770,7 @@ int join_thread(int pid,uint64 addr)
       if(pp->parent == p && (pid == 0 || pp->pid == pid)){
         // make sure the child isn't still in exit() or swtch().
         acquire(&pp->lock);
-        printf("calling join %d..\n",pp->pid);
+        //printf("calling join %d..\n",pp->pid);
         havekids = 1;
         if(pp->state == ZOMBIE){
           // Found one.

@@ -168,6 +168,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
+
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -320,7 +321,7 @@ tfreewalk(pagetable_t pagetable, int level)
     } 
   }
   if(level<=3){
-  printf("freeing level %d\n",level);
+  //printf("freeing level %d\n",level);
   kfree((void*)pagetable);
   }
 }
@@ -329,9 +330,9 @@ tfreewalk(pagetable_t pagetable, int level)
 void
 tuvmfree(pagetable_t pagetable, uint64 sz)
 {
-  printf("tuvmfree\n");
+  //printf("tuvmfree\n");
   if(sz > 0)
-    uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
+    uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 0);
   tfreewalk(pagetable, 1);
 }
 
